@@ -12,6 +12,27 @@ if [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
+# Install Docker if not found
+if ! command -v docker &> /dev/null; then
+    echo "🐳 Installing Docker..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq docker.io > /dev/null 2>&1
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sudo usermod -aG docker $USER
+    
+    # Reload group membership for current session
+    newgrp docker <<'EOF'
+echo "Docker installed successfully"
+EOF
+fi
+
+# Install Docker Compose if not available
+if ! docker compose version &> /dev/null; then
+    echo "📦 Installing Docker Compose..."
+    sudo apt-get install -y -qq docker-compose-v2 > /dev/null 2>&1 || true
+fi
+
 # Create .env if it doesn't exist
 if [ ! -f .env ]; then
     echo "Creating .env file..."
@@ -25,7 +46,7 @@ fi
 
 # Build and start
 echo "Building and starting LLM Gateway..."
-docker compose up -d --build
+sudo docker compose up -d --build
 
 echo ""
 echo "=== Setup Complete ==="

@@ -18,14 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY shared/package.json ./shared/
 COPY server/package.json ./server/
 COPY client/package.json ./client/
 COPY cli/package.json ./cli/
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install dependencies with pnpm (5-10x faster than npm)
+RUN corepack enable && pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # Copy built artifacts (pre-build on your dev machine)
 COPY server/dist ./server/dist

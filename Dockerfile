@@ -13,21 +13,21 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY shared/package.json ./shared/
 COPY server/package.json ./server/
 COPY client/package.json ./client/
 COPY cli/package.json ./cli/
 
-RUN npm ci
+RUN corepack enable && pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
 WORKDIR /app
 
 COPY . .
 
-RUN npm run build
-RUN npm prune --omit=dev
+RUN corepack enable && pnpm run build
+RUN pnpm prune --prod
 
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
@@ -36,12 +36,10 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV LLMGATEWAY_INSTALL_METHOD=docker
 
-COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
+COPY --from=build --chown=node:node /app/package.json /app/pnpm-lock.yaml ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
-# npm nests some production packages under the workspace instead of hoisting
-# them (undici lives at server/node_modules/undici). Skipping this copy shipped
-# images where the HTTP(S) proxy dispatcher failed to load and every request
-# silently went direct — issue #550.
+# pnpm stores production node_modules differently than npm. The build stage's
+# pruned node_modules (production only) are copied here instead of hoisting.
 COPY --from=build --chown=node:node /app/server/node_modules ./server/node_modules
 COPY --from=build --chown=node:node /app/shared ./shared
 COPY --from=build --chown=node:node /app/server/package.json ./server/package.json
