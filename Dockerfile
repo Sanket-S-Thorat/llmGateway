@@ -18,16 +18,17 @@ COPY shared/package.json ./shared/
 COPY server/package.json ./server/
 COPY client/package.json ./client/
 COPY cli/package.json ./cli/
+COPY desktop/package.json ./desktop/
 
-RUN corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+RUN npm ci --ignore-scripts
 
 FROM deps AS build
 WORKDIR /app
 
 COPY . .
 
-RUN corepack enable && pnpm run build
-RUN pnpm prune --prod
+RUN npm run build
+RUN npm prune --production
 
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
@@ -36,10 +37,8 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV LLMGATEWAY_INSTALL_METHOD=docker
 
-COPY --from=build --chown=node:node /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
-# pnpm stores production node_modules differently than npm. The build stage's
-# pruned node_modules (production only) are copied here instead of hoisting.
 COPY --from=build --chown=node:node /app/server/node_modules ./server/node_modules
 COPY --from=build --chown=node:node /app/shared ./shared
 COPY --from=build --chown=node:node /app/server/package.json ./server/package.json
