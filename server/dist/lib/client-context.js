@@ -1,0 +1,45 @@
+import { AsyncLocalStorage } from 'async_hooks';
+import { classifyClientAgent } from './client-classifier.js';
+// Request-scoped caller identity, readable from anywhere below the middleware
+// without threading parameters through every logRequest() call site (the chat
+// proxy, responses, anthropic, fusion, embeddings and media paths all log).
+const storage = new AsyncLocalStorage();
+// Resolve the client IP from the socket peer address. The X-Forwarded-For
+// header is only trusted when Express's "trust proxy" setting is enabled
+// (opt-in via app.set('trust proxy', ...) or the TRUST_PROXY env var in
+// run.ts). Without that, a spoofed header from a LAN client is ignored.
+function resolveClientIp(req) {
+    const trustProxy = req.app?.get('trust proxy') ?? false;
+    let raw;
+    if (trustProxy) {
+        const xff = req.headers['x-forwarded-for'];
+        raw = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim() || req.socket.remoteAddress || null;
+    }
+    else {
+        raw = req.socket.remoteAddress || null;
+    }
+    // Normalize IPv4-mapped IPv6 ("::ffff:192.168.0.5" -> "192.168.0.5").
+    return raw?.replace(/^::ffff:/i, '') ?? null;
+}
+// Privacy opt-out: REQUEST_ANALYTICS_LOG_CLIENT=false stores nulls instead of
+// the caller's IP/UA. Read per request (not at module load) so tests and
+// embedders can toggle it without re-importing.
+function clientLoggingEnabled() {
+    return process.env.REQUEST_ANALYTICS_LOG_CLIENT !== 'false';
+}
+export function clientContextMiddleware(req, _res, next) {
+    if (!clientLoggingEnabled()) {
+        storage.run({ ip: null, userAgent: null, agent: null }, next);
+        return;
+    }
+    const ua = req.headers['user-agent'];
+    storage.run({
+        ip: resolveClientIp(req),
+        userAgent: typeof ua === 'string' ? ua.slice(0, 256) : null,
+        agent: classifyClientAgent(req),
+    }, next);
+}
+export function getClientContext() {
+    return storage.getStore() ?? { ip: null, userAgent: null, agent: null };
+}
+//# sourceMappingURL=client-context.js.map
